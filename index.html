@@ -72,15 +72,21 @@
     }
     button { cursor: pointer; }
     button:disabled { cursor: not-allowed; opacity: 0.65; }
+    @media (max-width: 860px) {
+      .user-stats { grid-template-columns: repeat(3, 1fr) !important; }
+      .user-charts { grid-template-columns: 1fr !important; }
+    }
     @media (max-width: 640px) {
       .grid-3 { grid-template-columns: 1fr 1fr !important; }
       .grid-2 { grid-template-columns: 1fr !important; }
       .grid-form { grid-template-columns: 1fr !important; }
       .admin-max { padding: 20px 12px !important; }
       .hide-mobile { display: none !important; }
+      .user-stats { grid-template-columns: 1fr 1fr !important; }
     }
     @media (max-width: 400px) {
       .grid-3 { grid-template-columns: 1fr !important; }
+      .user-stats { grid-template-columns: 1fr !important; }
     }
   </style>
 </head>
@@ -184,9 +190,11 @@
   }
 
   // ─── Bar Chart ──────────────────────────────────────────────────────────────
-  function BarChart({ donations, expenses }) {
+  function BarChart({ donations, expenses, large = false }) {
     const now = new Date();
-    const months = [-1, 0].map(offset => {
+    const numMonths = large ? 6 : 2;
+    const months = Array.from({ length: numMonths }, (_, i) => {
+      const offset = i - (numMonths - 1);
       const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
       return { label: d.toLocaleString('default', { month: 'short' }), m: d.getMonth() + 1, y: d.getFullYear() };
     });
@@ -196,13 +204,23 @@
       return { month: mo.label, don, exp };
     });
     const max = Math.max(...data.flatMap(d => [d.don, d.exp]), 1);
-    const W = 360, H = 160, padL = 60, padB = 32, padT = 16, barW = 30, gap = 12, gW = barW * 2 + gap, gGap = 48;
-    return h('svg', { viewBox: `0 0 ${W} ${H + padB + padT}`, style: { width: '100%', maxWidth: W } },
+    const W = large ? 640 : 360;
+    const H = large ? 220 : 160;
+    const padL = large ? 72 : 60, padB = 36, padT = large ? 24 : 16;
+    const barW = large ? 22 : 30, gap = large ? 8 : 12;
+    const gW = barW * 2 + gap;
+    const totalGroups = data.length;
+    const totalBarArea = W - padL - 24;
+    const gGap = (totalBarArea - gW * totalGroups) / (totalGroups - 1 || 1);
+
+    return h('svg', { viewBox: `0 0 ${W} ${H + padB + padT}`, style: { width: '100%' } },
       [0, 0.25, 0.5, 0.75, 1].map(t => {
         const y = padT + (1 - t) * H;
+        const val = max * t;
+        const label = val === 0 ? '0' : val >= 100000 ? `${(val/100000).toFixed(1)}L` : `${(val/1000).toFixed(val < 10000 ? 1 : 0)}k`;
         return h('g', { key: t },
-          h('line', { x1: padL, x2: W - 20, y1: y, y2: y, stroke: 'var(--border)', strokeWidth: 1 }),
-          h('text', { x: padL - 6, y: y + 4, textAnchor: 'end', fontSize: 10, fill: 'var(--text-muted)' }, t === 0 ? '0' : `${(max * t / 1000).toFixed(max > 100000 ? 0 : 1)}k`)
+          h('line', { x1: padL, x2: W - 12, y1: y, y2: y, stroke: 'var(--border)', strokeWidth: 1 }),
+          h('text', { x: padL - 6, y: y + 4, textAnchor: 'end', fontSize: large ? 11 : 10, fill: 'var(--text-muted)' }, label)
         );
       }),
       data.map((d, i) => {
@@ -210,26 +228,29 @@
         const donH = (d.don / max) * H;
         const expH = (d.exp / max) * H;
         return h('g', { key: d.month },
-          h('rect', { x: gx, y: padT + H - donH, width: barW, height: donH, fill: 'var(--primary)', rx: 3 }),
-          h('rect', { x: gx + barW + gap, y: padT + H - expH, width: barW, height: expH, fill: 'var(--gold)', rx: 3 }),
-          h('text', { x: gx + barW + gap / 2, y: padT + H + 18, textAnchor: 'middle', fontSize: 11, fill: 'var(--text-muted)' }, d.month)
+          donH > 0 && h('rect', { x: gx, y: padT + H - donH, width: barW, height: donH, fill: 'var(--primary)', rx: 3 }),
+          donH === 0 && h('rect', { x: gx, y: padT + H - 2, width: barW, height: 2, fill: 'var(--border)', rx: 1 }),
+          expH > 0 && h('rect', { x: gx + barW + gap, y: padT + H - expH, width: barW, height: expH, fill: 'var(--gold)', rx: 3 }),
+          expH === 0 && h('rect', { x: gx + barW + gap, y: padT + H - 2, width: barW, height: 2, fill: 'var(--border)', rx: 1 }),
+          h('text', { x: gx + barW + gap / 2, y: padT + H + (large ? 20 : 18), textAnchor: 'middle', fontSize: large ? 12 : 11, fill: 'var(--text-muted)' }, d.month)
         );
       }),
-      h('rect', { x: W - 120, y: padT, width: 12, height: 12, fill: 'var(--primary)', rx: 2 }),
-      h('text', { x: W - 104, y: padT + 10, fontSize: 11, fill: 'var(--text-muted)' }, 'Donations'),
-      h('rect', { x: W - 120, y: padT + 18, width: 12, height: 12, fill: 'var(--gold)', rx: 2 }),
-      h('text', { x: W - 104, y: padT + 28, fontSize: 11, fill: 'var(--text-muted)' }, 'Expenses')
+      h('rect', { x: W - 130, y: padT, width: 12, height: 12, fill: 'var(--primary)', rx: 2 }),
+      h('text', { x: W - 114, y: padT + 10, fontSize: large ? 12 : 11, fill: 'var(--text-muted)' }, 'Donations'),
+      h('rect', { x: W - 130, y: padT + 18, width: 12, height: 12, fill: 'var(--gold)', rx: 2 }),
+      h('text', { x: W - 114, y: padT + 28, fontSize: large ? 12 : 11, fill: 'var(--text-muted)' }, 'Expenses')
     );
   }
 
   // ─── Pie Chart ──────────────────────────────────────────────────────────────
-  function PieChart({ donations }) {
+  function PieChart({ donations, large = false }) {
     const byFund = {};
     donations.forEach(d => { byFund[d.fund_type] = (byFund[d.fund_type] || 0) + Number(d.amount); });
     const total = Object.values(byFund).reduce((s, v) => s + v, 0);
-    if (total === 0) return h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'center', height: 100, color: 'var(--text-muted)', fontSize: 13 } }, 'No donations yet');
+    if (total === 0) return h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'center', height: large ? 200 : 100, color: 'var(--text-muted)', fontSize: 13 } }, 'No donations yet');
     const slices = Object.entries(byFund).map(([fund, value]) => ({ fund, value, color: FUND_COLORS[fund] || '#999', pct: value / total }));
-    const cx = 80, cy = 80, r = 68;
+    const size = large ? 200 : 160;
+    const cx = size / 2, cy = size / 2, r = large ? 88 : 68, ir = large ? 44 : 0;
     let angle = -Math.PI / 2;
     const arcs = slices.map(s => {
       const start = angle;
@@ -237,17 +258,29 @@
       const end = angle;
       const x1 = cx + r * Math.cos(start), y1 = cy + r * Math.sin(start);
       const x2 = cx + r * Math.cos(end), y2 = cy + r * Math.sin(end);
+      if (large) {
+        const ix1 = cx + ir * Math.cos(end), iy1 = cy + ir * Math.sin(end);
+        const ix2 = cx + ir * Math.cos(start), iy2 = cy + ir * Math.sin(start);
+        return { ...s, d: `M${x1.toFixed(2)},${y1.toFixed(2)} A${r},${r} 0 ${s.pct > 0.5 ? 1 : 0},1 ${x2.toFixed(2)},${y2.toFixed(2)} L${ix1.toFixed(2)},${iy1.toFixed(2)} A${ir},${ir} 0 ${s.pct > 0.5 ? 1 : 0},0 ${ix2.toFixed(2)},${iy2.toFixed(2)} Z` };
+      }
       return { ...s, d: `M${cx},${cy} L${x1.toFixed(2)},${y1.toFixed(2)} A${r},${r} 0 ${s.pct > 0.5 ? 1 : 0},1 ${x2.toFixed(2)},${y2.toFixed(2)} Z` };
     });
-    return h('div', { style: { display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' } },
-      h('svg', { viewBox: '0 0 160 160', style: { width: 130, flexShrink: 0 } },
-        arcs.map(a => h('path', { key: a.fund, d: a.d, fill: a.color, stroke: 'var(--surface)', strokeWidth: 2 }))
+    const svgW = large ? size : size;
+    return h('div', { style: { display: 'flex', alignItems: 'center', gap: large ? 28 : 20, flexWrap: 'wrap', justifyContent: large ? 'center' : 'flex-start' } },
+      h('svg', { viewBox: `0 0 ${svgW} ${size}`, style: { width: large ? 200 : 130, flexShrink: 0 } },
+        arcs.map(a => h('path', { key: a.fund, d: a.d, fill: a.color, stroke: 'var(--surface)', strokeWidth: large ? 3 : 2 })),
+        large && h('circle', { cx, cy, r: ir - 1, fill: 'var(--surface)' }),
+        large && h('text', { x: cx, y: cy - 6, textAnchor: 'middle', fontSize: 11, fill: 'var(--text-muted)', fontFamily: 'Outfit' }, 'Total'),
+        large && h('text', { x: cx, y: cy + 12, textAnchor: 'middle', fontSize: 13, fontWeight: 700, fill: 'var(--text)', fontFamily: 'Lora, serif' }, fmt(total))
       ),
-      h('div', { style: { display: 'flex', flexDirection: 'column', gap: 5 } },
-        slices.map(s => h('div', { key: s.fund, style: { display: 'flex', alignItems: 'center', gap: 7, fontSize: 12 } },
-          h('span', { style: { width: 9, height: 9, borderRadius: 2, background: s.color, flexShrink: 0, display: 'inline-block' } }),
-          h('span', { style: { color: 'var(--text)' } }, s.fund),
-          h('span', { style: { color: 'var(--text-muted)', marginLeft: 'auto', paddingLeft: 12 } }, Math.round(s.pct * 100) + '%')
+      h('div', { style: { display: 'flex', flexDirection: 'column', gap: large ? 10 : 5, flex: 1, minWidth: 140 } },
+        slices.map(s => h('div', { key: s.fund, style: { display: 'flex', alignItems: 'center', gap: 8, fontSize: large ? 13 : 12 } },
+          h('span', { style: { width: large ? 11 : 9, height: large ? 11 : 9, borderRadius: 3, background: s.color, flexShrink: 0, display: 'inline-block' } }),
+          h('span', { style: { color: 'var(--text)', fontWeight: 500 } }, s.fund),
+          h('div', { style: { marginLeft: 'auto', textAlign: 'right' } },
+            h('div', { style: { fontWeight: 700, color: s.color, fontSize: large ? 13 : 12 } }, fmt(s.value)),
+            large && h('div', { style: { fontSize: 11, color: 'var(--text-muted)' } }, Math.round(s.pct * 100) + '%')
+          )
         ))
       )
     );
@@ -445,6 +478,16 @@
     const totalDon = donations.reduce((s, d) => s + Number(d.amount), 0);
     const totalExp = expenses.reduce((s, e) => s + Number(e.amount), 0);
     const balance = totalDon - totalExp;
+    const thisMonth = new Date().toISOString().slice(0, 7);
+    const donThisMonth = donations.filter(d => d.date && d.date.slice(0, 7) === thisMonth).reduce((s, d) => s + Number(d.amount), 0);
+    const expThisMonth = expenses.filter(e => e.date && e.date.slice(0, 7) === thisMonth).reduce((s, e) => s + Number(e.amount), 0);
+
+    const recentTx = useMemo(() => {
+      return [
+        ...donations.map(d => ({ ...d, _type: 'donation' })),
+        ...expenses.map(e => ({ ...e, _type: 'expense' })),
+      ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 6);
+    }, [donations, expenses]);
 
     const tabBtn = (active) => ({
       padding: '8px 24px', borderRadius: 20, border: 'none', cursor: 'pointer',
@@ -452,46 +495,110 @@
       background: active ? 'var(--primary)' : 'transparent', color: active ? '#fff' : 'var(--text-muted)',
     });
 
-    return h('div', { className: 'page', style: { maxWidth: 600, margin: '0 auto', padding: '32px 16px' } },
+    const divider = (label) => h('div', { style: { display: 'flex', alignItems: 'center', gap: 12, margin: '36px 0 20px' } },
+      h('div', { style: { flex: 1, height: 1, background: 'var(--border)' } }),
+      h('span', { style: { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.12em', textTransform: 'uppercase', whiteSpace: 'nowrap' } }, label),
+      h('div', { style: { flex: 1, height: 1, background: 'var(--border)' } })
+    );
+
+    return h('div', { className: 'page', style: { maxWidth: 960, margin: '0 auto', padding: '32px 20px' } },
       h(Toast, { msg: toast.msg, type: toast.type }),
-      h('div', { style: { textAlign: 'center', marginBottom: 28 } },
-        h('h2', { style: { margin: '0 0 4px', fontSize: 22 } }, 'Record a Transaction'),
-        h('p', { style: { color: 'var(--text-muted)', margin: 0, fontSize: 14 } }, 'Enter donation or expense details below')
-      ),
-      h('div', { style: { display: 'flex', justifyContent: 'center', marginBottom: 24 } },
-        h('div', { style: { background: 'var(--surface-muted)', borderRadius: 24, padding: 4, display: 'inline-flex', border: '1px solid var(--border)' } },
-          h('button', { style: tabBtn(tab === 'donation'), onClick: () => setTab('donation') }, '💰 Donation'),
-          h('button', { style: tabBtn(tab === 'expense'), onClick: () => setTab('expense') }, '💸 Expense')
-        )
-      ),
-      h('div', { style: C.card },
-        h('h3', { style: { margin: '0 0 20px', fontSize: 17 } }, tab === 'donation' ? 'Add Donation' : 'Add Expense'),
-        tab === 'donation'
-          ? h(DonationForm, { onSubmit: handleAddDonation, saving })
-          : h(ExpenseForm, { onSubmit: handleAddExpense, saving })
-      ),
-      // Overview section
-      h('div', { style: { marginTop: 36 } },
-        h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 } },
-          h('div', { style: { flex: 1, height: 1, background: 'var(--border)' } }),
-          h('span', { style: { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.12em', textTransform: 'uppercase', whiteSpace: 'nowrap' } }, 'Fund Overview'),
-          h('div', { style: { flex: 1, height: 1, background: 'var(--border)' } })
+
+      // ── Entry form ──
+      h('div', { style: { maxWidth: 620, margin: '0 auto' } },
+        h('div', { style: { textAlign: 'center', marginBottom: 28 } },
+          h('h2', { style: { margin: '0 0 4px', fontSize: 22 } }, 'Record a Transaction'),
+          h('p', { style: { color: 'var(--text-muted)', margin: 0, fontSize: 14 } }, 'Enter donation or expense details below')
         ),
-        h('div', { className: 'grid-3', style: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 16 } },
-          h(StatCard, { icon: '💰', label: 'Donations', value: fmt(totalDon), color: 'var(--primary)' }),
-          h(StatCard, { icon: '💸', label: 'Expenses', value: fmt(totalExp), color: '#a63d2f' }),
-          h(StatCard, { icon: '🏦', label: 'Balance', value: (balance < 0 ? '-' : '') + fmt(balance), color: balance >= 0 ? 'var(--primary)' : '#a63d2f' })
-        ),
-        h('div', { className: 'grid-2', style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 } },
-          h('div', { style: C.card },
-            h('h3', { style: { margin: '0 0 12px', fontSize: 13, fontFamily: 'Outfit', fontWeight: 600 } }, 'Income vs Expenses'),
-            h(BarChart, { donations, expenses })
-          ),
-          h('div', { style: C.card },
-            h('h3', { style: { margin: '0 0 12px', fontSize: 13, fontFamily: 'Outfit', fontWeight: 600 } }, 'Fund Distribution'),
-            h(PieChart, { donations })
+        h('div', { style: { display: 'flex', justifyContent: 'center', marginBottom: 24 } },
+          h('div', { style: { background: 'var(--surface-muted)', borderRadius: 24, padding: 4, display: 'inline-flex', border: '1px solid var(--border)' } },
+            h('button', { style: tabBtn(tab === 'donation'), onClick: () => setTab('donation') }, '💰 Donation'),
+            h('button', { style: tabBtn(tab === 'expense'), onClick: () => setTab('expense') }, '💸 Expense')
           )
+        ),
+        h('div', { style: C.card },
+          h('h3', { style: { margin: '0 0 20px', fontSize: 17 } }, tab === 'donation' ? 'Add Donation' : 'Add Expense'),
+          tab === 'donation'
+            ? h(DonationForm, { onSubmit: handleAddDonation, saving })
+            : h(ExpenseForm, { onSubmit: handleAddExpense, saving })
         )
+      ),
+
+      // ── Fund Overview ──
+      divider('Fund Overview'),
+
+      // Big stat cards — 5 across
+      h('div', { className: 'user-stats', style: { display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 14, marginBottom: 24 } },
+        h('div', { style: { ...C.card, borderLeft: '3px solid var(--primary)', padding: '18px 20px', gridColumn: 'span 1' } },
+          h('div', { style: { fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 } }, 'Total Donations'),
+          h('div', { style: { fontSize: 26, fontWeight: 700, color: 'var(--primary)', fontFamily: 'Lora, serif', lineHeight: 1.2 } }, fmt(totalDon)),
+          h('div', { style: { fontSize: 12, color: 'var(--text-muted)', marginTop: 4 } }, donations.length + ' records')
+        ),
+        h('div', { style: { ...C.card, borderLeft: '3px solid #a63d2f', padding: '18px 20px' } },
+          h('div', { style: { fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 } }, 'Total Expenses'),
+          h('div', { style: { fontSize: 26, fontWeight: 700, color: '#a63d2f', fontFamily: 'Lora, serif', lineHeight: 1.2 } }, fmt(totalExp)),
+          h('div', { style: { fontSize: 12, color: 'var(--text-muted)', marginTop: 4 } }, expenses.length + ' records')
+        ),
+        h('div', { style: { ...C.card, borderLeft: `3px solid ${balance >= 0 ? 'var(--primary)' : '#a63d2f'}`, padding: '18px 20px' } },
+          h('div', { style: { fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 } }, 'Balance'),
+          h('div', { style: { fontSize: 26, fontWeight: 700, color: balance >= 0 ? 'var(--primary)' : '#a63d2f', fontFamily: 'Lora, serif', lineHeight: 1.2 } }, (balance < 0 ? '-' : '') + fmt(balance)),
+          h('div', { style: { fontSize: 12, color: 'var(--text-muted)', marginTop: 4 } }, balance >= 0 ? 'Surplus' : 'Deficit')
+        ),
+        h('div', { style: { ...C.card, borderLeft: '3px solid var(--gold)', padding: '18px 20px' } },
+          h('div', { style: { fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 } }, 'This Month In'),
+          h('div', { style: { fontSize: 26, fontWeight: 700, color: 'var(--primary)', fontFamily: 'Lora, serif', lineHeight: 1.2 } }, fmt(donThisMonth)),
+          h('div', { style: { fontSize: 12, color: 'var(--text-muted)', marginTop: 4 } }, new Date().toLocaleString('default', { month: 'long' }))
+        ),
+        h('div', { style: { ...C.card, borderLeft: '3px solid var(--gold)', padding: '18px 20px' } },
+          h('div', { style: { fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 6 } }, 'This Month Out'),
+          h('div', { style: { fontSize: 26, fontWeight: 700, color: '#a63d2f', fontFamily: 'Lora, serif', lineHeight: 1.2 } }, fmt(expThisMonth)),
+          h('div', { style: { fontSize: 12, color: 'var(--text-muted)', marginTop: 4 } }, new Date().toLocaleString('default', { month: 'long' }))
+        )
+      ),
+
+      // Charts row — bar chart full width, pie beside
+      h('div', { className: 'user-charts', style: { display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 16, marginBottom: 20 } },
+        h('div', { style: { ...C.card, padding: '24px 28px' } },
+          h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 20 } },
+            h('h3', { style: { margin: 0, fontSize: 15, fontFamily: 'Outfit', fontWeight: 600 } }, 'Income vs Expenses'),
+            h('span', { style: { fontSize: 12, color: 'var(--text-muted)' } }, 'Last 6 months')
+          ),
+          h(BarChart, { donations, expenses, large: true })
+        ),
+        h('div', { style: { ...C.card, padding: '24px 28px' } },
+          h('div', { style: { marginBottom: 20 } },
+            h('h3', { style: { margin: 0, fontSize: 15, fontFamily: 'Outfit', fontWeight: 600 } }, 'Fund Distribution'),
+          ),
+          h(PieChart, { donations, large: true })
+        )
+      ),
+
+      // Recent Transactions
+      h('div', { style: C.card },
+        h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 } },
+          h('h3', { style: { margin: 0, fontSize: 15 } }, 'Recent Transactions'),
+          h('span', { style: { fontSize: 12, color: 'var(--text-muted)' } }, 'Latest 6 entries')
+        ),
+        recentTx.length === 0
+          ? h('div', { style: { textAlign: 'center', padding: '32px 0', color: 'var(--text-muted)', fontSize: 14 } }, 'No transactions yet.')
+          : h('div', { style: { display: 'flex', flexDirection: 'column', gap: 0 } },
+              recentTx.map((tx, i) => {
+                const isDon = tx._type === 'donation';
+                return h('div', { key: tx.id, style: { display: 'flex', alignItems: 'center', gap: 14, padding: '13px 4px', borderBottom: i < recentTx.length - 1 ? '1px solid var(--border)' : 'none' } },
+                  h('div', { style: { width: 36, height: 36, borderRadius: 8, background: isDon ? '#e8f5f0' : '#fdf0ee', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 } }, isDon ? '💰' : '💸'),
+                  h('div', { style: { flex: 1, minWidth: 0 } },
+                    h('div', { style: { fontWeight: 600, fontSize: 14, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, isDon ? tx.donor_name : tx.expense_name),
+                    h('div', { style: { fontSize: 12, color: 'var(--text-muted)', marginTop: 1 } },
+                      h('span', { style: { display: 'inline-block', padding: '1px 7px', borderRadius: 3, background: 'var(--surface-muted)', border: '1px solid var(--border)', marginRight: 6 } }, isDon ? tx.fund_type : tx.category),
+                      new Date(tx.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })
+                    )
+                  ),
+                  h('div', { style: { fontWeight: 700, fontFamily: 'Lora, serif', fontSize: 15, color: isDon ? 'var(--primary)' : '#a63d2f', whiteSpace: 'nowrap' } },
+                    (isDon ? '+' : '-') + fmt(tx.amount)
+                  )
+                );
+              })
+            )
       )
     );
   }
