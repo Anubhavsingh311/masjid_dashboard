@@ -2,7 +2,7 @@
 
 A lightweight, single-file web app for managing masjid donations and expenses. Built with vanilla React (no build step), connected to Supabase for auth and data.
 
-## Live Demo
+## [Live Demo](https://anubhavsingh311.github.io/masjid_dashboard/)
 
 Deploy via GitHub Pages — see setup below.
 
