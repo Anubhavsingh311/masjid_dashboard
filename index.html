@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Al-Noor Masjid · Fund Management</title>
+  <meta name="description" content="Fund management dashboard for Al-Noor Masjid — track donations, expenses, and balance." />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🕌</text></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;0,700;1,400&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.3.1/umd/react-dom.production.min.js"></script>
+  <style>
+    :root {
+      --bg: #faf7f2;
+      --surface: #ffffff;
+      --surface-muted: #f4f0e8;
+      --primary: #1a5c4a;
+      --primary-light: #236b57;
+      --primary-fg: #ffffff;
+      --gold: #c9a84c;
+      --gold-light: #e8c96d;
+      --gold-fg: #1a1a1a;
+      --text: #1c1c1c;
+      --text-muted: #6b6b6b;
+      --border: #e2ddd4;
+      --border-strong: #c8c0b0;
+      --danger: #c0392b;
+      --success: #1a7a4a;
+      --radius: 10px;
+      --shadow: 0 1px 4px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04);
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html { scroll-padding-top: env(safe-area-inset-top, 0px); }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Outfit', sans-serif;
+      font-size: 15px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      padding-top: env(safe-area-inset-top, 0px);
+      padding-bottom: env(safe-area-inset-bottom, 0px);
+    }
+    h1, h2, h3 { font-family: 'Lora', serif; font-weight: 600; line-height: 1.25; }
+    input, select, textarea { font-family: 'Outfit', sans-serif; font-size: 14px; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 3px; }
+    @keyframes slideIn { from { transform: translateY(-12px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    .toast { animation: slideIn 0.25s ease; }
+    .page { animation: fadeIn 0.2s ease; }
+    .spinner {
+      display: inline-block;
+      width: 20px; height: 20px;
+      border: 2.5px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+    .spinner-dark {
+      border-color: var(--border-strong);
+      border-top-color: var(--primary);
+    }
+    input:focus, select:focus, textarea:focus {
+      outline: none;
+      border-color: var(--primary) !important;
+      box-shadow: 0 0 0 3px rgba(26,92,74,0.12);
+    }
+    button { cursor: pointer; }
+    button:disabled { cursor: not-allowed; opacity: 0.65; }
+    @media (max-width: 640px) {
+      .grid-3 { grid-template-columns: 1fr 1fr !important; }
+      .grid-2 { grid-template-columns: 1fr !important; }
+      .grid-form { grid-template-columns: 1fr !important; }
+      .admin-max { padding: 20px 12px !important; }
+      .hide-mobile { display: none !important; }
+    }
+    @media (max-width: 400px) {
+      .grid-3 { grid-template-columns: 1fr !important; }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script>
+  // ─── Supabase Config ────────────────────────────────────────────────────────
+  const SUPABASE_URL = 'https://tpvpjcfspyvnoaqyklit.supabase.co';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRwdnBqY2ZzcHl2bm9hcXlrbGl0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk5OTQwNTYsImV4cCI6MjEwNTU3MDA1Nn0.iduKsdS5qKbscwv81do2v1-tZZK3vx0ilOnxLYDoHHw';
+
+  // ─── Supabase REST helpers ──────────────────────────────────────────────────
+  const authHeaders = (token) => ({
+    'Content-Type': 'application/json',
+    'apikey': SUPABASE_ANON_KEY,
+    'Authorization': 'Bearer ' + (token || SUPABASE_ANON_KEY),
+  });
+
+  const sbAuth = async (path, body) => {
+    const res = await fetch(SUPABASE_URL + '/auth/v1/' + path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'apikey': SUPABASE_ANON_KEY },
+      body: JSON.stringify(body),
+    });
+    return res.json();
+  };
+
+  const sbGet = async (table, token, params = '') => {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?${params}&order=created_at.desc`, {
+      headers: authHeaders(token),
+    });
+    if (!res.ok) throw new Error(`GET ${table} failed: ${res.status}`);
+    return res.json();
+  };
+
+  const sbInsert = async (table, body, token) => {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}`, {
+      method: 'POST',
+      headers: { ...authHeaders(token), 'Prefer': 'return=representation' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`INSERT ${table} failed: ${res.status}`);
+    return res.json();
+  };
+
+  const sbDelete = async (table, id, token) => {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${table}?id=eq.${id}`, {
+      method: 'DELETE',
+      headers: authHeaders(token),
+    });
+    if (!res.ok) throw new Error(`DELETE ${table} failed: ${res.status}`);
+  };
+
+  // ─── Session helpers ────────────────────────────────────────────────────────
+  const SESSION_KEY = 'masjid_session';
+  const saveSession = (s) => { try { localStorage.setItem(SESSION_KEY, JSON.stringify(s)); } catch(_) {} };
+  const loadSession = () => { try { return JSON.parse(localStorage.getItem(SESSION_KEY)); } catch(_) { return null; } };
+  const clearSession = () => { try { localStorage.removeItem(SESSION_KEY); } catch(_) {} };
+
+  // ─── Helpers ────────────────────────────────────────────────────────────────
+  const fmt = (n) => '₹' + Math.abs(Number(n) || 0).toLocaleString('en-IN');
+  const uid = () => Math.random().toString(36).slice(2) + Date.now().toString(36);
+  const today = () => new Date().toISOString().slice(0, 10);
+
+  const FUND_COLORS = {
+    General: '#1a5c4a', Zakat: '#c9a84c', Sadaqah: '#2e7d6a',
+    Construction: '#8b5e2e', "Jumu'ah": '#5c3d9e', Ramadan: '#a63d2f', Other: '#6b6b6b',
+  };
+  const FUND_TYPES = ['General', 'Zakat', 'Sadaqah', 'Construction', "Jumu'ah", 'Ramadan', 'Other'];
+  const PAYMENT_METHODS = ['Cash', 'UPI', 'Bank Transfer', 'Cheque'];
+  const EXPENSE_CATEGORIES = ['Utilities', 'Maintenance', 'Staff', 'Events', 'Other'];
+
+  // ─── CSS constants ──────────────────────────────────────────────────────────
+  const C = {
+    card: { background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', boxShadow: 'var(--shadow)', padding: '24px' },
+    input: { width: '100%', padding: '9px 12px', border: '1px solid var(--border-strong)', borderRadius: 6, background: 'var(--bg)', color: 'var(--text)', fontFamily: 'Outfit, sans-serif', fontSize: 14, transition: 'border-color 0.15s, box-shadow 0.15s' },
+    label: { display: 'block', fontSize: 13, fontWeight: 500, color: 'var(--text-muted)', marginBottom: 5, letterSpacing: '0.02em' },
+    btn: { fontFamily: 'Outfit, sans-serif', fontWeight: 600, border: 'none', borderRadius: 6, cursor: 'pointer', transition: 'all 0.15s', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8 },
+  };
+
+  const { useState, useMemo, useEffect, useRef } = React;
+  const h = React.createElement;
+
+  // ─── Toast ──────────────────────────────────────────────────────────────────
+  function Toast({ msg, type = 'success' }) {
+    if (!msg) return null;
+    const bg = type === 'success' ? 'var(--success)' : type === 'error' ? 'var(--danger)' : 'var(--primary)';
+    return h('div', { className: 'toast', style: { position: 'fixed', top: 80, left: '50%', transform: 'translateX(-50%)', background: bg, color: '#fff', padding: '12px 20px', borderRadius: 8, fontSize: 14, fontWeight: 500, zIndex: 999, whiteSpace: 'nowrap', boxShadow: '0 4px 20px rgba(0,0,0,0.18)' } }, msg);
+  }
+
+  // ─── Field ──────────────────────────────────────────────────────────────────
+  function Field({ label, children }) {
+    return h('div', null, h('label', { style: C.label }, label), children);
+  }
+
+  // ─── Spinner ────────────────────────────────────────────────────────────────
+  function Loader({ text = 'Loading…' }) {
+    return h('div', { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 80, gap: 16, color: 'var(--text-muted)' } },
+      h('span', { className: 'spinner spinner-dark', style: { width: 32, height: 32 } }),
+      h('span', { style: { fontSize: 14 } }, text)
+    );
+  }
+
+  // ─── Bar Chart ──────────────────────────────────────────────────────────────
+  function BarChart({ donations, expenses }) {
+    const now = new Date();
+    const months = [-1, 0].map(offset => {
+      const d = new Date(now.getFullYear(), now.getMonth() + offset, 1);
+      return { label: d.toLocaleString('default', { month: 'short' }), m: d.getMonth() + 1, y: d.getFullYear() };
+    });
+    const data = months.map(mo => {
+      const don = donations.filter(d => { const dt = new Date(d.date); return dt.getMonth() + 1 === mo.m && dt.getFullYear() === mo.y; }).reduce((s, d) => s + Number(d.amount), 0);
+      const exp = expenses.filter(e => { const dt = new Date(e.date); return dt.getMonth() + 1 === mo.m && dt.getFullYear() === mo.y; }).reduce((s, e) => s + Number(e.amount), 0);
+      return { month: mo.label, don, exp };
+    });
+    const max = Math.max(...data.flatMap(d => [d.don, d.exp]), 1);
+    const W = 360, H = 160, padL = 60, padB = 32, padT = 16, barW = 30, gap = 12, gW = barW * 2 + gap, gGap = 48;
+    return h('svg', { viewBox: `0 0 ${W} ${H + padB + padT}`, style: { width: '100%', maxWidth: W } },
+      [0, 0.25, 0.5, 0.75, 1].map(t => {
+        const y = padT + (1 - t) * H;
+        return h('g', { key: t },
+          h('line', { x1: padL, x2: W - 20, y1: y, y2: y, stroke: 'var(--border)', strokeWidth: 1 }),
+          h('text', { x: padL - 6, y: y + 4, textAnchor: 'end', fontSize: 10, fill: 'var(--text-muted)' }, t === 0 ? '0' : `${(max * t / 1000).toFixed(max > 100000 ? 0 : 1)}k`)
+        );
+      }),
+      data.map((d, i) => {
+        const gx = padL + i * (gW + gGap);
+        const donH = (d.don / max) * H;
+        const expH = (d.exp / max) * H;
+        return h('g', { key: d.month },
+          h('rect', { x: gx, y: padT + H - donH, width: barW, height: donH, fill: 'var(--primary)', rx: 3 }),
+          h('rect', { x: gx + barW + gap, y: padT + H - expH, width: barW, height: expH, fill: 'var(--gold)', rx: 3 }),
+          h('text', { x: gx + barW + gap / 2, y: padT + H + 18, textAnchor: 'middle', fontSize: 11, fill: 'var(--text-muted)' }, d.month)
+        );
+      }),
+      h('rect', { x: W - 120, y: padT, width: 12, height: 12, fill: 'var(--primary)', rx: 2 }),
+      h('text', { x: W - 104, y: padT + 10, fontSize: 11, fill: 'var(--text-muted)' }, 'Donations'),
+      h('rect', { x: W - 120, y: padT + 18, width: 12, height: 12, fill: 'var(--gold)', rx: 2 }),
+      h('text', { x: W - 104, y: padT + 28, fontSize: 11, fill: 'var(--text-muted)' }, 'Expenses')
+    );
+  }
+
+  // ─── Pie Chart ──────────────────────────────────────────────────────────────
+  function PieChart({ donations }) {
+    const byFund = {};
+    donations.forEach(d => { byFund[d.fund_type] = (byFund[d.fund_type] || 0) + Number(d.amount); });
+    const total = Object.values(byFund).reduce((s, v) => s + v, 0);
+    if (total === 0) return h('div', { style: { display: 'flex', alignItems: 'center', justifyContent: 'center', height: 100, color: 'var(--text-muted)', fontSize: 13 } }, 'No donations yet');
+    const slices = Object.entries(byFund).map(([fund, value]) => ({ fund, value, color: FUND_COLORS[fund] || '#999', pct: value / total }));
+    const cx = 80, cy = 80, r = 68;
+    let angle = -Math.PI / 2;
+    const arcs = slices.map(s => {
+      const start = angle;
+      angle += s.pct * 2 * Math.PI;
+      const end = angle;
+      const x1 = cx + r * Math.cos(start), y1 = cy + r * Math.sin(start);
+      const x2 = cx + r * Math.cos(end), y2 = cy + r * Math.sin(end);
+      return { ...s, d: `M${cx},${cy} L${x1.toFixed(2)},${y1.toFixed(2)} A${r},${r} 0 ${s.pct > 0.5 ? 1 : 0},1 ${x2.toFixed(2)},${y2.toFixed(2)} Z` };
+    });
+    return h('div', { style: { display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' } },
+      h('svg', { viewBox: '0 0 160 160', style: { width: 130, flexShrink: 0 } },
+        arcs.map(a => h('path', { key: a.fund, d: a.d, fill: a.color, stroke: 'var(--surface)', strokeWidth: 2 }))
+      ),
+      h('div', { style: { display: 'flex', flexDirection: 'column', gap: 5 } },
+        slices.map(s => h('div', { key: s.fund, style: { display: 'flex', alignItems: 'center', gap: 7, fontSize: 12 } },
+          h('span', { style: { width: 9, height: 9, borderRadius: 2, background: s.color, flexShrink: 0, display: 'inline-block' } }),
+          h('span', { style: { color: 'var(--text)' } }, s.fund),
+          h('span', { style: { color: 'var(--text-muted)', marginLeft: 'auto', paddingLeft: 12 } }, Math.round(s.pct * 100) + '%')
+        ))
+      )
+    );
+  }
+
+  // ─── Stat Card ──────────────────────────────────────────────────────────────
+  function StatCard({ icon, label, value, color, sub }) {
+    return h('div', { style: { ...C.card, borderLeft: `3px solid ${color}`, padding: '18px 20px' } },
+      h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' } },
+        h('span', { style: { fontSize: 22 } }, icon),
+        sub && h('span', { style: { fontSize: 11, color: 'var(--text-muted)', background: 'var(--surface-muted)', padding: '2px 8px', borderRadius: 20, border: '1px solid var(--border)' } }, sub)
+      ),
+      h('div', { style: { fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: 8, marginBottom: 3 } }, label),
+      h('div', { style: { fontSize: 24, fontWeight: 700, color, fontFamily: 'Lora, serif' } }, value)
+    );
+  }
+
+  // ─── Login Page ─────────────────────────────────────────────────────────────
+  function LoginPage({ onLogin }) {
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [error, setError] = useState('');
+    const [loading, setLoading] = useState(false);
+
+    const handleSubmit = async (e) => {
+      e.preventDefault();
+      setLoading(true);
+      setError('');
+      try {
+        const data = await sbAuth('token?grant_type=password', { email: email.trim().toLowerCase(), password });
+        if (!data.access_token) {
+          setError(data.error_description || data.msg || 'Invalid credentials.');
+          setLoading(false);
+          return;
+        }
+        const meta = data.user?.user_metadata ?? {};
+        const role = meta.role === 'admin' ? 'admin' : 'user';
+        const name = meta.full_name || email.split('@')[0];
+        const session = { token: data.access_token, refresh_token: data.refresh_token, role, name, email: email.trim().toLowerCase() };
+        saveSession(session);
+        onLogin(session);
+      } catch (err) {
+        setError('Connection error. Check your internet connection.');
+        setLoading(false);
+      }
+    };
+
+    return h('div', { className: 'page', style: { minHeight: '100vh', background: 'var(--bg)', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px 16px' } },
+      h('div', { style: { position: 'fixed', top: 0, left: 0, right: 0, height: 3, background: 'linear-gradient(90deg, var(--gold), var(--gold-light), var(--gold))' } }),
+      h('div', { style: { textAlign: 'center', marginBottom: 32 } },
+        h('div', { style: { fontSize: 56, marginBottom: 12, filter: 'drop-shadow(0 4px 12px rgba(26,92,74,0.2))' } }, '🕌'),
+        h('h1', { style: { margin: '0 0 4px', fontSize: 28, color: 'var(--primary)', letterSpacing: '-0.02em' } }, 'Al-Noor Masjid'),
+        h('div', { style: { fontSize: 11, color: 'var(--text-muted)', letterSpacing: '0.15em', textTransform: 'uppercase', fontWeight: 600 } }, 'Fund Management System')
+      ),
+      h('div', { style: { ...C.card, width: '100%', maxWidth: 420 } },
+        h('h2', { style: { margin: '0 0 24px', fontSize: 20, textAlign: 'center', color: 'var(--text)' } }, 'Sign In'),
+        error && h('div', { style: { background: '#fdf0ee', border: '1px solid #f5c6c2', color: '#a63d2f', padding: '10px 14px', borderRadius: 6, fontSize: 13, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 } },
+          h('span', null, '⚠️'), error
+        ),
+        h('form', { onSubmit: handleSubmit, style: { display: 'flex', flexDirection: 'column', gap: 16 } },
+          h(Field, { label: 'Email Address' },
+            h('input', { style: C.input, type: 'email', value: email, onChange: e => { setEmail(e.target.value); setError(''); }, placeholder: 'admin@example.com', autoComplete: 'email', required: true, disabled: loading, autoFocus: true })
+          ),
+          h(Field, { label: 'Password' },
+            h('input', { style: C.input, type: 'password', value: password, onChange: e => { setPassword(e.target.value); setError(''); }, placeholder: '••••••••', autoComplete: 'current-password', required: true, disabled: loading })
+          ),
+          h('button', {
+            type: 'submit', disabled: loading,
+            style: { ...C.btn, width: '100%', padding: '12px', background: 'var(--primary)', color: '#fff', fontSize: 15, marginTop: 4 }
+          }, loading ? [h('span', { key: 's', className: 'spinner' }), 'Signing in…'] : 'Sign In')
+        )
+      ),
+      h('p', { style: { marginTop: 20, fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', lineHeight: 1.7 } },
+        'Contact the Masjid administrator to get your login credentials.'
+      )
+    );
+  }
+
+  // ─── Donation Form ──────────────────────────────────────────────────────────
+  function DonationForm({ onSubmit, saving }) {
+    const [form, setForm] = useState({ donor_name: '', amount: '', fund_type: 'General', payment_method: 'Cash', date: today(), description: '' });
+    const set = (k) => (e) => setForm(p => ({ ...p, [k]: e.target.value }));
+
+    const handleSubmit = async (e) => {
+      e.preventDefault();
+      await onSubmit({ ...form, amount: parseFloat(form.amount) });
+      setForm({ donor_name: '', amount: '', fund_type: 'General', payment_method: 'Cash', date: today(), description: '' });
+    };
+
+    return h('form', { onSubmit: handleSubmit, style: { display: 'flex', flexDirection: 'column', gap: 16 } },
+      h(Field, { label: 'Donor Name *' },
+        h('input', { style: C.input, value: form.donor_name, onChange: set('donor_name'), placeholder: 'e.g. Anonymous', required: true, disabled: saving })
+      ),
+      h('div', { className: 'grid-form', style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 } },
+        h(Field, { label: 'Amount (₹) *' },
+          h('input', { style: C.input, type: 'number', min: 1, step: 0.01, value: form.amount, onChange: set('amount'), placeholder: '0', required: true, disabled: saving })
+        ),
+        h(Field, { label: 'Date' },
+          h('input', { style: C.input, type: 'date', value: form.date, onChange: set('date'), disabled: saving })
+        )
+      ),
+      h('div', { className: 'grid-form', style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 } },
+        h(Field, { label: 'Fund Type' },
+          h('select', { style: C.input, value: form.fund_type, onChange: set('fund_type'), disabled: saving },
+            FUND_TYPES.map(f => h('option', { key: f }, f))
+          )
+        ),
+        h(Field, { label: 'Payment Method' },
+          h('select', { style: C.input, value: form.payment_method, onChange: set('payment_method'), disabled: saving },
+            PAYMENT_METHODS.map(m => h('option', { key: m }, m))
+          )
+        )
+      ),
+      h(Field, { label: 'Description' },
+        h('textarea', { style: { ...C.input, resize: 'vertical', minHeight: 72 }, value: form.description, onChange: set('description'), placeholder: 'Optional notes…', disabled: saving })
+      ),
+      h('button', { type: 'submit', disabled: saving, style: { ...C.btn, width: '100%', padding: '12px', background: 'var(--primary)', color: '#fff', fontSize: 15, marginTop: 4 } },
+        saving ? [h('span', { key: 's', className: 'spinner' }), 'Saving…'] : '💰 Record Donation'
+      )
+    );
+  }
+
+  // ─── Expense Form ───────────────────────────────────────────────────────────
+  function ExpenseForm({ onSubmit, saving }) {
+    const [form, setForm] = useState({ expense_name: '', amount: '', category: 'Utilities', date: today(), description: '' });
+    const set = (k) => (e) => setForm(p => ({ ...p, [k]: e.target.value }));
+
+    const handleSubmit = async (e) => {
+      e.preventDefault();
+      await onSubmit({ ...form, amount: parseFloat(form.amount) });
+      setForm({ expense_name: '', amount: '', category: 'Utilities', date: today(), description: '' });
+    };
+
+    return h('form', { onSubmit: handleSubmit, style: { display: 'flex', flexDirection: 'column', gap: 16 } },
+      h(Field, { label: 'Expense Name *' },
+        h('input', { style: C.input, value: form.expense_name, onChange: set('expense_name'), placeholder: 'e.g. Electricity Bill', required: true, disabled: saving })
+      ),
+      h('div', { className: 'grid-form', style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 } },
+        h(Field, { label: 'Amount (₹) *' },
+          h('input', { style: C.input, type: 'number', min: 1, step: 0.01, value: form.amount, onChange: set('amount'), placeholder: '0', required: true, disabled: saving })
+        ),
+        h(Field, { label: 'Date' },
+          h('input', { style: C.input, type: 'date', value: form.date, onChange: set('date'), disabled: saving })
+        )
+      ),
+      h(Field, { label: 'Category' },
+        h('select', { style: C.input, value: form.category, onChange: set('category'), disabled: saving },
+          EXPENSE_CATEGORIES.map(c => h('option', { key: c }, c))
+        )
+      ),
+      h(Field, { label: 'Description' },
+        h('textarea', { style: { ...C.input, resize: 'vertical', minHeight: 72 }, value: form.description, onChange: set('description'), placeholder: 'Optional notes…', disabled: saving })
+      ),
+      h('button', { type: 'submit', disabled: saving, style: { ...C.btn, width: '100%', padding: '12px', background: 'var(--gold)', color: 'var(--gold-fg)', fontSize: 15, marginTop: 4 } },
+        saving ? [h('span', { key: 's', className: 'spinner spinner-dark' }), 'Saving…'] : '💸 Record Expense'
+      )
+    );
+  }
+
+  // ─── User View ──────────────────────────────────────────────────────────────
+  function UserView({ donations, expenses, token, onAdd }) {
+    const [tab, setTab] = useState('donation');
+    const [saving, setSaving] = useState(false);
+    const [toast, setToast] = useState({ msg: '', type: 'success' });
+
+    const showToast = (msg, type = 'success') => {
+      setToast({ msg, type });
+      setTimeout(() => setToast({ msg: '', type: 'success' }), 3000);
+    };
+
+    const handleAddDonation = async (data) => {
+      setSaving(true);
+      try {
+        const rows = await sbInsert('donations', data, token);
+        onAdd('donation', rows[0]);
+        showToast('✓ Donation recorded successfully');
+      } catch (err) {
+        showToast('Failed to save donation. Please try again.', 'error');
+      }
+      setSaving(false);
+    };
+
+    const handleAddExpense = async (data) => {
+      setSaving(true);
+      try {
+        const rows = await sbInsert('expenses', data, token);
+        onAdd('expense', rows[0]);
+        showToast('✓ Expense recorded successfully');
+      } catch (err) {
+        showToast('Failed to save expense. Please try again.', 'error');
+      }
+      setSaving(false);
+    };
+
+    const totalDon = donations.reduce((s, d) => s + Number(d.amount), 0);
+    const totalExp = expenses.reduce((s, e) => s + Number(e.amount), 0);
+    const balance = totalDon - totalExp;
+
+    const tabBtn = (active) => ({
+      padding: '8px 24px', borderRadius: 20, border: 'none', cursor: 'pointer',
+      fontFamily: 'Outfit, sans-serif', fontWeight: 500, fontSize: 14, transition: 'all 0.15s',
+      background: active ? 'var(--primary)' : 'transparent', color: active ? '#fff' : 'var(--text-muted)',
+    });
+
+    return h('div', { className: 'page', style: { maxWidth: 600, margin: '0 auto', padding: '32px 16px' } },
+      h(Toast, { msg: toast.msg, type: toast.type }),
+      h('div', { style: { textAlign: 'center', marginBottom: 28 } },
+        h('h2', { style: { margin: '0 0 4px', fontSize: 22 } }, 'Record a Transaction'),
+        h('p', { style: { color: 'var(--text-muted)', margin: 0, fontSize: 14 } }, 'Enter donation or expense details below')
+      ),
+      h('div', { style: { display: 'flex', justifyContent: 'center', marginBottom: 24 } },
+        h('div', { style: { background: 'var(--surface-muted)', borderRadius: 24, padding: 4, display: 'inline-flex', border: '1px solid var(--border)' } },
+          h('button', { style: tabBtn(tab === 'donation'), onClick: () => setTab('donation') }, '💰 Donation'),
+          h('button', { style: tabBtn(tab === 'expense'), onClick: () => setTab('expense') }, '💸 Expense')
+        )
+      ),
+      h('div', { style: C.card },
+        h('h3', { style: { margin: '0 0 20px', fontSize: 17 } }, tab === 'donation' ? 'Add Donation' : 'Add Expense'),
+        tab === 'donation'
+          ? h(DonationForm, { onSubmit: handleAddDonation, saving })
+          : h(ExpenseForm, { onSubmit: handleAddExpense, saving })
+      ),
+      // Overview section
+      h('div', { style: { marginTop: 36 } },
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 } },
+          h('div', { style: { flex: 1, height: 1, background: 'var(--border)' } }),
+          h('span', { style: { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '0.12em', textTransform: 'uppercase', whiteSpace: 'nowrap' } }, 'Fund Overview'),
+          h('div', { style: { flex: 1, height: 1, background: 'var(--border)' } })
+        ),
+        h('div', { className: 'grid-3', style: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 16 } },
+          h(StatCard, { icon: '💰', label: 'Donations', value: fmt(totalDon), color: 'var(--primary)' }),
+          h(StatCard, { icon: '💸', label: 'Expenses', value: fmt(totalExp), color: '#a63d2f' }),
+          h(StatCard, { icon: '🏦', label: 'Balance', value: (balance < 0 ? '-' : '') + fmt(balance), color: balance >= 0 ? 'var(--primary)' : '#a63d2f' })
+        ),
+        h('div', { className: 'grid-2', style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 } },
+          h('div', { style: C.card },
+            h('h3', { style: { margin: '0 0 12px', fontSize: 13, fontFamily: 'Outfit', fontWeight: 600 } }, 'Income vs Expenses'),
+            h(BarChart, { donations, expenses })
+          ),
+          h('div', { style: C.card },
+            h('h3', { style: { margin: '0 0 12px', fontSize: 13, fontFamily: 'Outfit', fontWeight: 600 } }, 'Fund Distribution'),
+            h(PieChart, { donations })
+          )
+        )
+      )
+    );
+  }
+
+  // ─── Admin View ─────────────────────────────────────────────────────────────
+  function AdminView({ donations, expenses, token, onDelete }) {
+    const [search, setSearch] = useState('');
+    const [filter, setFilter] = useState('all');
+    const [dateFrom, setDateFrom] = useState('');
+    const [dateTo, setDateTo] = useState('');
+    const [deleting, setDeleting] = useState(null);
+    const [toast, setToast] = useState({ msg: '', type: 'success' });
+
+    const showToast = (msg, type = 'success') => {
+      setToast({ msg, type });
+      setTimeout(() => setToast({ msg: '', type: 'success' }), 3000);
+    };
+
+    const totalDon = donations.reduce((s, d) => s + Number(d.amount), 0);
+    const totalExp = expenses.reduce((s, e) => s + Number(e.amount), 0);
+    const balance = totalDon - totalExp;
+
+    const allTx = useMemo(() => {
+      const combined = [
+        ...donations.map(d => ({ ...d, _type: 'donation' })),
+        ...expenses.map(e => ({ ...e, _type: 'expense' })),
+      ];
+      return combined.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    }, [donations, expenses]);
+
+    const filtered = useMemo(() => allTx.filter(tx => {
+      const name = tx._type === 'donation' ? tx.donor_name : tx.expense_name;
+      const desc = tx.description || '';
+      const matchSearch = !search || name.toLowerCase().includes(search.toLowerCase()) || desc.toLowerCase().includes(search.toLowerCase());
+      const matchFilter = filter === 'all' || tx._type === filter;
+      const matchFrom = !dateFrom || tx.date >= dateFrom;
+      const matchTo = !dateTo || tx.date <= dateTo;
+      return matchSearch && matchFilter && matchFrom && matchTo;
+    }), [allTx, search, filter, dateFrom, dateTo]);
+
+    const handleDelete = async (tx) => {
+      if (!confirm(`Delete this ${tx._type}?\nThis cannot be undone.`)) return;
+      setDeleting(tx.id);
+      try {
+        await sbDelete(tx._type === 'donation' ? 'donations' : 'expenses', tx.id, token);
+        onDelete(tx._type, tx.id);
+        showToast('Record deleted');
+      } catch (err) {
+        showToast('Delete failed. Please try again.', 'error');
+      }
+      setDeleting(null);
+    };
+
+    const filterBtn = (val, label) => h('button', {
+      key: val,
+      onClick: () => setFilter(val),
+      style: { padding: '6px 14px', border: '1px solid var(--border-strong)', borderRadius: 20, cursor: 'pointer', fontSize: 12, fontFamily: 'Outfit, sans-serif', fontWeight: 500, background: filter === val ? 'var(--primary)' : 'var(--surface)', color: filter === val ? '#fff' : 'var(--text-muted)', transition: 'all 0.15s' }
+    }, label);
+
+    const thStyle = { textAlign: 'left', padding: '8px 10px', color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap', fontSize: 11, letterSpacing: '0.05em', textTransform: 'uppercase' };
+
+    return h('div', { className: 'page admin-max', style: { maxWidth: 1060, margin: '0 auto', padding: '32px 16px' } },
+      h(Toast, { msg: toast.msg, type: toast.type }),
+      // Stat cards
+      h('div', { className: 'grid-3', style: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginBottom: 28 } },
+        h(StatCard, { icon: '💰', label: 'Total Donations', value: fmt(totalDon), color: 'var(--primary)', sub: donations.length + ' records' }),
+        h(StatCard, { icon: '💸', label: 'Total Expenses', value: fmt(totalExp), color: '#a63d2f', sub: expenses.length + ' records' }),
+        h(StatCard, { icon: '🏦', label: 'Current Balance', value: (balance < 0 ? '-' : '') + fmt(balance), color: balance >= 0 ? 'var(--primary)' : '#a63d2f' })
+      ),
+      // Charts
+      h('div', { className: 'grid-2', style: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 28 } },
+        h('div', { style: C.card },
+          h('h3', { style: { margin: '0 0 16px', fontSize: 15, fontFamily: 'Outfit', fontWeight: 600 } }, 'Income vs Expenses'),
+          h(BarChart, { donations, expenses })
+        ),
+        h('div', { style: C.card },
+          h('h3', { style: { margin: '0 0 16px', fontSize: 15, fontFamily: 'Outfit', fontWeight: 600 } }, 'Fund Distribution'),
+          h(PieChart, { donations })
+        )
+      ),
+      // Transaction table
+      h('div', { style: C.card },
+        h('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 12, marginBottom: 16 } },
+          h('h3', { style: { margin: 0, fontSize: 16 } }, 'Transaction History'),
+          h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' } },
+            h('input', { style: { ...C.input, width: 180, padding: '6px 11px', fontSize: 13 }, placeholder: '🔍 Search…', value: search, onChange: e => setSearch(e.target.value) }),
+            h('input', { className: 'hide-mobile', style: { ...C.input, width: 132, padding: '6px 11px', fontSize: 13 }, type: 'date', value: dateFrom, onChange: e => setDateFrom(e.target.value), title: 'From date' }),
+            h('input', { className: 'hide-mobile', style: { ...C.input, width: 132, padding: '6px 11px', fontSize: 13 }, type: 'date', value: dateTo, onChange: e => setDateTo(e.target.value), title: 'To date' }),
+            h('div', { style: { display: 'flex', gap: 6 } },
+              filterBtn('all', 'All'),
+              filterBtn('donation', '💰'),
+              filterBtn('expense', '💸')
+            )
+          )
+        ),
+        h('div', { style: { overflowX: 'auto' } },
+          h('table', { style: { width: '100%', borderCollapse: 'collapse', fontSize: 13 } },
+            h('thead', null,
+              h('tr', { style: { borderBottom: '2px solid var(--border)' } },
+                ['Date', 'Type', 'Name', 'Category / Fund', 'Method', 'Amount', ''].map((hdr, i) =>
+                  h('th', { key: i, style: { ...thStyle, textAlign: hdr === 'Amount' ? 'right' : 'left' } }, hdr)
+                )
+              )
+            ),
+            h('tbody', null,
+              filtered.length === 0
+                ? h('tr', null, h('td', { colSpan: 7, style: { textAlign: 'center', padding: '48px 20px', color: 'var(--text-muted)', fontSize: 14 } }, search ? 'No results match your search.' : 'No transactions yet.'))
+                : filtered.map(tx => {
+                    const isDon = tx._type === 'donation';
+                    return h('tr', { key: tx.id, style: { borderBottom: '1px solid var(--border)', transition: 'background 0.1s' },
+                      onMouseEnter: ev => (ev.currentTarget.style.background = 'var(--surface-muted)'),
+                      onMouseLeave: ev => (ev.currentTarget.style.background = '')
+                    },
+                      h('td', { style: { padding: '10px 10px', color: 'var(--text-muted)', whiteSpace: 'nowrap', fontSize: 12 } },
+                        new Date(tx.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })
+                      ),
+                      h('td', { style: { padding: '10px 10px' } },
+                        h('span', { style: { padding: '2px 9px', borderRadius: 20, fontSize: 11, fontWeight: 600, background: isDon ? '#e8f5f0' : '#fdf0ee', color: isDon ? 'var(--primary)' : '#a63d2f' } }, isDon ? 'Donation' : 'Expense')
+                      ),
+                      h('td', { style: { padding: '10px 10px', maxWidth: 220 } },
+                        h('div', { style: { fontWeight: 500 } }, isDon ? tx.donor_name : tx.expense_name),
+                        tx.description && h('div', { style: { color: 'var(--text-muted)', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 200 } }, tx.description)
+                      ),
+                      h('td', { style: { padding: '10px 10px' } },
+                        h('span', { style: { display: 'inline-block', padding: '1px 8px', borderRadius: 4, fontSize: 11, background: 'var(--surface-muted)', border: '1px solid var(--border)', color: 'var(--text-muted)' } }, isDon ? tx.fund_type : tx.category)
+                      ),
+                      h('td', { style: { padding: '10px 10px', color: 'var(--text-muted)', fontSize: 12 } }, isDon ? tx.payment_method : '—'),
+                      h('td', { style: { padding: '10px 10px', textAlign: 'right', fontWeight: 700, fontFamily: 'Lora, serif', color: isDon ? 'var(--primary)' : '#a63d2f', whiteSpace: 'nowrap' } },
+                        (isDon ? '+' : '-') + fmt(tx.amount)
+                      ),
+                      h('td', { style: { padding: '10px 6px', textAlign: 'center', width: 40 } },
+                        h('button', {
+                          onClick: () => handleDelete(tx),
+                          disabled: deleting === tx.id,
+                          title: 'Delete record',
+                          style: { background: 'none', border: 'none', cursor: 'pointer', fontSize: 14, padding: '4px 6px', borderRadius: 4, opacity: 0.45, transition: 'opacity 0.15s' },
+                          onMouseEnter: ev => { ev.currentTarget.style.opacity = 1; ev.currentTarget.style.background = '#fdf0ee'; },
+                          onMouseLeave: ev => { ev.currentTarget.style.opacity = 0.45; ev.currentTarget.style.background = 'none'; },
+                        }, deleting === tx.id ? '…' : '🗑')
+                      )
+                    );
+                  })
+            )
+          )
+        ),
+        h('div', { style: { marginTop: 12, fontSize: 12, color: 'var(--text-muted)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
+          h('span', null, `Showing ${filtered.length} of ${allTx.length} transactions`),
+          (dateFrom || dateTo) && h('button', { onClick: () => { setDateFrom(''); setDateTo(''); }, style: { background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', fontSize: 12, fontFamily: 'Outfit' } }, 'Clear date filter')
+        )
+      )
+    );
+  }
+
+  // ─── App ────────────────────────────────────────────────────────────────────
+  function App() {
+    const [session, setSession] = useState(null);
+    const [donations, setDonations] = useState([]);
+    const [expenses, setExpenses] = useState([]);
+    const [authLoading, setAuthLoading] = useState(true);
+    const [dataLoading, setDataLoading] = useState(false);
+    const [dataError, setDataError] = useState('');
+
+    // Restore session from localStorage on mount
+    useEffect(() => {
+      const s = loadSession();
+      if (s && s.token && s.role) {
+        setSession(s);
+      }
+      setAuthLoading(false);
+    }, []);
+
+    // Load data when session is set
+    useEffect(() => {
+      if (!session) return;
+      loadData();
+    }, [session]);
+
+    const loadData = async () => {
+      setDataLoading(true);
+      setDataError('');
+      try {
+        const [donRows, expRows] = await Promise.all([
+          sbGet('donations', session.token, 'select=*'),
+          sbGet('expenses', session.token, 'select=*'),
+        ]);
+        setDonations(Array.isArray(donRows) ? donRows : []);
+        setExpenses(Array.isArray(expRows) ? expRows : []);
+      } catch (err) {
+        setDataError('Failed to load data. Check your connection or session.');
+      }
+      setDataLoading(false);
+    };
+
+    const handleLogin = (s) => setSession(s);
+
+    const handleLogout = async () => {
+      try { await sbAuth('logout', {}); } catch(_) {}
+      clearSession();
+      setSession(null);
+      setDonations([]);
+      setExpenses([]);
+    };
+
+    const handleAdd = (type, row) => {
+      if (type === 'donation') setDonations(prev => [row, ...prev]);
+      else setExpenses(prev => [row, ...prev]);
+    };
+
+    const handleDelete = (type, id) => {
+      if (type === 'donation') setDonations(prev => prev.filter(d => d.id !== id));
+      else setExpenses(prev => prev.filter(e => e.id !== id));
+    };
+
+    if (authLoading) return h('div', { style: { minHeight: '100vh', background: 'var(--bg)', display: 'flex', alignItems: 'center', justifyContent: 'center' } },
+      h('div', { style: { textAlign: 'center' } }, h('div', { style: { fontSize: 48 } }, '🕌'), h('div', { style: { color: 'var(--text-muted)', fontSize: 14, marginTop: 12 } }, 'Loading…'))
+    );
+
+    if (!session) return h(LoginPage, { onLogin: handleLogin });
+
+    return h('div', { style: { minHeight: '100vh', background: 'var(--bg)' } },
+      // Gold top bar
+      h('div', { style: { height: 3, background: 'linear-gradient(90deg, var(--gold), var(--gold-light), var(--gold))', position: 'fixed', top: 'env(safe-area-inset-top, 0px)', left: 0, right: 0, zIndex: 20 } }),
+      // Navbar
+      h('nav', { style: { background: 'var(--primary)', color: '#fff', padding: '0 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 62, position: 'sticky', top: 0, zIndex: 10, boxShadow: '0 2px 16px rgba(26,92,74,0.25)', marginTop: 3 } },
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } },
+          h('span', { style: { fontSize: 24 } }, '🕌'),
+          h('div', null,
+            h('div', { style: { fontFamily: 'Lora, serif', fontWeight: 700, fontSize: 16, lineHeight: 1.2 } }, 'Al-Noor Masjid'),
+            h('div', { style: { fontSize: 10, opacity: 0.65, letterSpacing: '0.07em', textTransform: 'uppercase' } }, 'Fund Management')
+          )
+        ),
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: 10 } },
+          h('div', { style: { textAlign: 'right' } },
+            h('div', { style: { fontSize: 13, fontWeight: 600, lineHeight: 1.3 } }, session.name),
+            h('span', { style: { display: 'inline-block', fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', background: session.role === 'admin' ? 'var(--gold)' : 'rgba(255,255,255,0.18)', color: session.role === 'admin' ? 'var(--gold-fg)' : '#fff', padding: '1px 8px', borderRadius: 10 } }, session.role)
+          ),
+          session.role === 'admin' && h('button', { onClick: loadData, title: 'Refresh data', style: { background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', color: '#fff', borderRadius: 6, padding: '5px 9px', fontSize: 14, lineHeight: 1 } }, '↻'),
+          h('button', { onClick: handleLogout, style: { padding: '6px 14px', background: 'rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.9)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 20, fontFamily: 'Outfit, sans-serif', fontSize: 13, fontWeight: 500 } }, 'Logout')
+        )
+      ),
+      dataLoading
+        ? h(Loader, { text: 'Fetching records…' })
+        : dataError
+          ? h('div', { style: { maxWidth: 500, margin: '60px auto', textAlign: 'center', padding: '0 16px' } },
+              h('div', { style: { fontSize: 40, marginBottom: 12 } }, '⚠️'),
+              h('p', { style: { color: 'var(--text-muted)', marginBottom: 20 } }, dataError),
+              h('button', { onClick: loadData, style: { ...C.btn, padding: '10px 24px', background: 'var(--primary)', color: '#fff', fontSize: 14 } }, 'Retry')
+            )
+          : session.role === 'user'
+            ? h(UserView, { donations, expenses, token: session.token, onAdd: handleAdd })
+            : h(AdminView, { donations, expenses, token: session.token, onDelete: handleDelete })
+    );
+  }
+
+  ReactDOM.createRoot(document.getElementById('root')).render(
+    h(React.StrictMode, null, h(App))
+  );
+  </script>
+</body>
+</html>
